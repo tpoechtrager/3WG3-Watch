@@ -37,6 +37,8 @@
 #include <cmath>
 #include <curl/curl.h>
 
+//#define TEST
+
 #ifndef _WIN32
 #include <unistd.h>
 #define Sleep(ms) usleep(ms * 1000)
@@ -180,10 +182,10 @@ void parseMessages(const std::string &messages, Info &info) {
   const char *m = messages.c_str();
   char line[4096];
 
-  int PrevNetworkType = -1;
+  int prevNetworkType = -1;
 
   if (info.GotNetworkType)
-    PrevNetworkType = info.getNetworkTypeAsInt();
+    prevNetworkType = info.getNetworkTypeAsInt();
 
   while (getLine(m, line)) {
     size_t pos;
@@ -193,6 +195,20 @@ void parseMessages(const std::string &messages, Info &info) {
 
       if (sscanf(s, "network_type = %63[^,], ", info.NetworkType) == 1)
         info.GotNetworkType = true;
+    } else if ((pos = find(line, "AT+ZPAS?^M^M +ZPAS: ")) != NPOS) {
+      const char *s = line + pos + strlen("AT+ZPAS?^M^M +ZPAS: \"");
+      const char *p = strchr(s, '"');
+
+      if (p) {
+        size_t len = p - s;
+
+        if (len >= sizeof(info.NetworkType))
+          len = sizeof(info.NetworkType) - 1;
+
+        memcpy(info.NetworkType, s, len);
+        info.NetworkType[len] = '\0';
+        info.GotNetworkType = true;
+      }
     } else if ((pos = find(line, " +ZRSSI: ")) != NPOS) {
       const char *s = line + pos + strlen(" +ZRSSI: ");
       info.RSRP = info.RSCP = info.RSRQ = info.RSSI = 0xffff;
@@ -272,7 +288,9 @@ void parseMessages(const std::string &messages, Info &info) {
 
       // 0: Global Cell ID, 1: Physical Cell ID, 2: Band, 3: Channel
 
-      if (sscanf(s, "%*d, %*d, LTE %63[^,], %d", band, &info.Channel) == 2) {
+      if (sscanf(s, "%d, %*d, LTE %63[^,], %d", &info.GlobalCellID, band, &info.Channel) == 3) {
+        info.GotCellID = true;
+
         if (!strcmp(band, "B3"))
           info.Frequency = 1800;
         else if (!strcmp(band, "B7"))
@@ -290,8 +308,8 @@ void parseMessages(const std::string &messages, Info &info) {
     }
   }
 
-  if (PrevNetworkType != -1 && info.GotNetworkType &&
-      PrevNetworkType != info.getNetworkTypeAsInt()) {
+  if (prevNetworkType != -1 && info.GotNetworkType &&
+      prevNetworkType != info.getNetworkTypeAsInt()) {
     info.reset(); // Force clean values after net switch
     return;
   }
@@ -302,9 +320,256 @@ void parseMessages(const std::string &messages, Info &info) {
 
 void updateThread() {
   std::string data;
+  
+#ifdef TEST
+  data = R"("Jan 22 15:38:28 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:28 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.debug mainControl[2217]: mc_fsm.c, 2206 msqid_ds info:current number of bytes in quere is 0
+Jan 22 15:38:38 ralink user.debug mainControl[2217]: mc_fsm.c, 2207 msqid_ds info:max number of bytes in quere is 16384
+Jan 22 15:38:38 ralink user.debug mainControl[2217]: mc_fsm.c, 2208 msqid_ds info:current number of msgs in quere is 0
+Jan 22 15:38:38 ralink user.info mainControl[2217]: mc_at_send_utils.c, 788 send AT+ZDON? to at server,wait rsp......
+Jan 22 15:38:38 ralink user.info mainControl[2217]: mc_at_send_utils.c, 832 send AT+ZPAS to at server,wait rsp......
+Jan 22 15:38:38 ralink user.info mainControl[2217]: mc_fsm.c, 155 SetSpnDisplayType---end spn is null
+Jan 22 15:38:38 ralink user.info mainControl[2217]: mc_at_send_utils.c, 6050 send AT$QCPBMPREF SET to at server,wait rsp......
+Jan 22 15:38:38 ralink user.info mainControl[2217]: mc_at_send_utils.c, 6050 send AT$QCPBMPREF SET to at server,wait rsp......
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: Qualcomm_list.c, 1165 get provider name in list ok !
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:38 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:39 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.debug mainControl[2217]: mc_fsm.c, 2206 msqid_ds info:current number of bytes in quere is 0
+Jan 22 15:38:49 ralink user.debug mainControl[2217]: mc_fsm.c, 2207 msqid_ds info:max number of bytes in quere is 16384
+Jan 22 15:38:49 ralink user.debug mainControl[2217]: mc_fsm.c, 2208 msqid_ds info:current number of msgs in quere is 0
+Jan 22 15:38:49 ralink user.info mainControl[2217]: mc_at_send_utils.c, 788 send AT+ZDON? to at server,wait rsp......
+Jan 22 15:38:49 ralink user.info mainControl[2217]: mc_at_send_utils.c, 832 send AT+ZPAS to at server,wait rsp......
+Jan 22 15:38:49 ralink user.info mainControl[2217]: mc_fsm.c, 155 SetSpnDisplayType---end spn is null
+Jan 22 15:38:49 ralink user.info mainControl[2217]: mc_at_send_utils.c, 6050 send AT$QCPBMPREF SET to at server,wait rsp......
+Jan 22 15:38:49 ralink user.info mainControl[2217]: mc_at_send_utils.c, 6050 send AT$QCPBMPREF SET to at server,wait rsp......
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: Qualcomm_list.c, 1165 get provider name in list ok !
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:49 ralink user.info mainControl[1893]: mainControl.c, 91 mc_ParseMsgQ::MSG_ID_AT_SERVER
+Jan 22 15:38:28 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is 2,1,"FFFE","1D9B50B",7
+Jan 22 15:38:28 ralink user.info at-server[2031]: response.c, 1014 AT Result =^B
+Jan 22 15:38:28 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:28 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:28 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CREG=0^M
+Jan 22 15:38:28 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CREG=0^M
+Jan 22 15:38:28 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:28 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 16.
+Jan 22 15:38:28 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CREG=0^M^M OK^M -------------------RecvLen:16-----
+Jan 22 15:38:28 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CSQ^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CSQ^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 28.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CSQ^M^M +CSQ: 26,99^M ^M OK^M -------------------RecvLen:28-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is 26,99
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =^Z
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+ZDON?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+ZDON?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 66.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+ZDON?^M^M +ZDON: " 3 AT",232,10," 3 AT",232,10,"ROAM_OFF"^M ^M OK^M -------------------RecvLen:66-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is " 3 AT",232,10," 3 AT",232,10,"ROAM_OFF"
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result = 3 AT
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+ZPAS?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+ZPAS?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 39.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+ZPAS?^M^M +ZPAS: "LTE","CS_PS"^M ^M OK^M -------------------RecvLen:39-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is "LTE","CS_PS"
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =LTE
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+ZRSSI?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+ZRSSI?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 43.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+ZRSSI?^M^M +ZRSSI: -98,-15,-62,8.8^M ^M OK^M -------------------RecvLen:43-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is -98,-15,-62,8.8
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =žÿÿÿñÿÿÿÂÿÿÿ^H
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+ZCELLINFO?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+ZCELLINFO?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 63.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+ZCELLINFO?^M^M +ZCELLINFO: 31044875, 178, LTE B3, 1814^M ^M OK^M -------------------RecvLen:63-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is 31044875, 178, LTE B3, 1814
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =^KµÙ^A²
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT$QCPBMPREF=1^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT$QCPBMPREF=1^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 21.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT$QCPBMPREF=1^M^M OK^M -------------------RecvLen:21-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CNUM^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CNUM^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 14.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CNUM^M^M OK^M -------------------RecvLen:14-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT$QCPBMPREF=0^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT$QCPBMPREF=0^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 21.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT$QCPBMPREF=0^M^M OK^M -------------------RecvLen:21-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CREG=2^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CREG=2^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 16.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CREG=2^M^M OK^M -------------------RecvLen:16-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CREG?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CREG?^M
+Jan 22 15:38:38 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 48.
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CREG?^M^M +CREG: 2,1,"FFFE","1D9B50B",7^M ^M OK^M -------------------RecvLen:48-----
+Jan 22 15:38:38 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is 2,1,"FFFE","1D9B50B",7
+Jan 22 15:38:38 ralink user.info at-server[2031]: response.c, 1014 AT Result =^B
+Jan 22 15:38:39 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:39 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:39 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CREG=0^M
+Jan 22 15:38:39 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CREG=0^M
+Jan 22 15:38:39 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:39 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 16.
+Jan 22 15:38:39 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CREG=0^M^M OK^M -------------------RecvLen:16-----
+Jan 22 15:38:39 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CSQ^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CSQ^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 28.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CSQ^M^M +CSQ: 25,99^M ^M OK^M -------------------RecvLen:28-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is 25,99
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =^Y
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+ZDON?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+ZDON?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 66.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+ZDON?^M^M +ZDON: " 3 AT",232,10," 3 AT",232,10,"ROAM_OFF"^M ^M OK^M -------------------RecvLen:66-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is " 3 AT",232,10," 3 AT",232,10,"ROAM_OFF"
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result = 3 AT
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+ZPAS?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+ZPAS?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 39.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+ZPAS?^M^M +ZPAS: "LTE","CS_PS"^M ^M OK^M -------------------RecvLen:39-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is "LTE","CS_PS"
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =LTE
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+ZRSSI?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+ZRSSI?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 43.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+ZRSSI?^M^M +ZRSSI: -98,-14,-64,9.2^M ^M OK^M -------------------RecvLen:43-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is -98,-14,-64,9.2
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =žÿÿÿòÿÿÿÀÿÿÿ
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+ZCELLINFO?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+ZCELLINFO?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 63.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+ZCELLINFO?^M^M +ZCELLINFO: 31044875, 178, LTE B3, 1814^M ^M OK^M -------------------RecvLen:63-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is 31044875, 178, LTE B3, 1814
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =^KµÙ^A²
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT$QCPBMPREF=1^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT$QCPBMPREF=1^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 21.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT$QCPBMPREF=1^M^M OK^M -------------------RecvLen:21-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CNUM^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CNUM^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 14.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CNUM^M^M OK^M -------------------RecvLen:14-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT$QCPBMPREF=0^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT$QCPBMPREF=0^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 21.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT$QCPBMPREF=0^M^M OK^M -------------------RecvLen:21-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CREG=2^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CREG=2^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 16.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CREG=2^M^M OK^M -------------------RecvLen:16-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CREG?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CREG?^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 48.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CREG?^M^M +CREG: 2,1,"FFFE","1D9B50B",7^M ^M OK^M -------------------RecvLen:48-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: atcode.c, 1757 the atResLine is 2,1,"FFFE","1D9B50B",7
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =^B
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 641 Receive a message
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 873 cscall_status = call_idle, ppp_status = ppp_connected
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 892 Parse AT Message : AT+CREG=0^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 897 Send AT---------------->>>>AT+CREG=0^M
+Jan 22 15:38:49 ralink user.info at-server[1892]: at_server.c, 729 Send AT Command SUCCESS! Waiting for AT response.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1250 Receive AT response ok,RecvLen(chars) = 16.
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1252 ------------------------------------ AT+CREG=0^M^M OK^M -------------------RecvLen:16-----
+Jan 22 15:38:49 ralink user.info at-server[2031]: response.c, 1014 AT Result =OK")";
+#endif
 
   do {
-    if (httpRequest("/goform/goform_set_cmd_process",
+    if (
+#ifdef TEST
+        true ||
+#endif
+        httpRequest("/goform/goform_set_cmd_process",
                     data,
                     "isTest=false&goformId=SYSLOG&syslog_flag=open&syslog_mode=wan_connect") &&
         httpRequest("/messages",
@@ -325,6 +590,7 @@ void updateThread() {
 } // unnamed namespace
 
 InitCode init(const char *routerIP, const char *routerPW, int updateInterval) {
+#ifndef TEST
   if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
     abort();
 
@@ -349,6 +615,7 @@ InitCode init(const char *routerIP, const char *routerPW, int updateInterval) {
   }
 
   info.reset();
+#endif
 
   updateThreadHandle = new std::thread(updateThread);
   return INIT_OK;

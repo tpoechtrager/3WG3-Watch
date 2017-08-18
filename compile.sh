@@ -30,9 +30,16 @@ fi
 
 CXXFLAGS+=" -Wall -Wextra -Wno-unused-function -Wformat -Wformat-security"
 
-if [ "$TARGET" != "Darwin" ]; then
-  LDFLAGS+=" -Wl,-s"
+if [ -n "$DEBUG" ]; then
+  CXXFLAGS+=" -g"
+else
+  CXXFLAGS+=" -O2"
+
+  if [ "$TARGET" != "Darwin" ]; then
+    LDFLAGS+=" -Wl,-s"
+  fi
 fi
+
 
 if [ -n "$HOSTPREFIX" ]; then
   CXX="$HOSTPREFIX-$CXX"
@@ -41,8 +48,8 @@ fi
 
 rm -f *.o *.a *.so 3wg3-watch{,.exe} libzte_mf283plus_watch$SUFFIX{.a,.dll,.dylib,.dll}
 
-$CXX zte_mf283plus_watch.cpp -fpic $CXXFLAGS $INCPATHS -std=c++11 -O2 -c
-$CXX main.cpp $CXXFLAGS $INCPATHS -std=c++11 -c -O2
+$CXX zte_mf283plus_watch.cpp -fpic $CXXFLAGS $INCPATHS -std=c++11 -c
+$CXX main.cpp $CXXFLAGS $INCPATHS -std=c++11 -c
 
 $AR rcs  libzte_mf283plus_watch$SUFFIX.a zte_mf283plus_watch.o
 $CXX zte_mf283plus_watch.o -shared -pthread $CXXFLAGS $INCPATHS -lcurl $LDFLAGS -o libzte_mf283plus_watch$SUFFIX$DLLSUFFIX

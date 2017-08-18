@@ -80,7 +80,7 @@ enum InitCode {
 };
 
 #ifdef __cplusplus
-InitCode init(const char *RouterIP, const char *RouterPW, int UpdateInterval = 1000);
+InitCode init(const char *routerIP, const char *routerPW, int updateInterval = 1000);
 void deinit();
 bool getInfo(Info &info);
 bool fakeGetInfo(Info &info);

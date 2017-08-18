@@ -128,7 +128,7 @@ void error(const char *msg) {
   exit(EXIT_FAILURE);
 }
 
-void getrouterIP(char *routerIP, size_t size) {
+void getRouterIP(char *routerIP, size_t size) {
 #ifdef EXPERIMENTAL
   printf("Getting Router IP...\n");
   struct hostent *h = gethostbyname("ralink.ralinktech.com");
@@ -152,7 +152,7 @@ void getrouterIP(char *routerIP, size_t size) {
   }
 }
 
-void getrouterPassword(char *routerPass, size_t size) {
+void getRouterPassword(char *routerPass, size_t size) {
   char tmp[16384];
 
   assert(size > 1);
@@ -236,12 +236,12 @@ int main(int argc, char **argv) {
   }
 
   if (!routerIP[0])
-    getrouterIP(routerIP, sizeof(routerIP));
+    getRouterIP(routerIP, sizeof(routerIP));
 
   getpass:;
 
   if (!routerPW[0])
-    getrouterPassword(routerPW, sizeof(routerPW));
+    getRouterPassword(routerPW, sizeof(routerPW));
 
   if (shouldExit)
     return 0;
@@ -289,7 +289,6 @@ int main(int argc, char **argv) {
 
     void update(const zte_mf283plus_watch::Info &info, const int currentNetworkType) {
       if (NetworkType != currentNetworkType) {
-        NetworkType = info.getNetworkTypeAsInt();
         RSRP.reset(); RSCP.reset(); RSRQ.reset();
         RSSI.reset(); SINR.reset(); ECIO.reset();
         CSQ.reset();
@@ -396,7 +395,7 @@ int main(int argc, char **argv) {
       fflush(stdout);
     }
 
-    Sleep(updateInterval);
+    Sleep(updateInterval < 1000 ? updateInterval : 1000);
   } while (!shouldExit);
 
   clearScreen();
