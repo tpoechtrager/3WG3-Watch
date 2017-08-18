@@ -28,6 +28,8 @@ else
   DLLSUFFIX=".so"
 fi
 
+CXXFLAGS+=" -Wall -Wextra -Wno-unused-function -Wformat -Wformat-security"
+
 if [ "$TARGET" != "Darwin" ]; then
   LDFLAGS+=" -Wl,-s"
 fi

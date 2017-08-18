@@ -24,7 +24,7 @@
 
   For more information, please refer to <http://unlicense.org/>
 
-  unknown @ LTEFORUM.AT - December, 2015
+  unknown @ LTEFORUM.AT - December, 2015 / January, 2016
 */
 
 #include <string>
@@ -44,6 +44,9 @@
 #include <windows.h>
 #endif
 
+// safe strncpy - http://stackoverflow.com/q/869883
+#define strncpy(dst, src, len) snprintf(dst, len, "%s", src)
+
 namespace {
 #include "base64.c"
 }
@@ -52,7 +55,7 @@ namespace {
 
 namespace zte_mf283plus_watch {
 
-int Info::getNetworkType() {
+int Info::getNetworkTypeAsInt() const {
   if (!strcmp(NetworkType, "LTE"))
     return 4;
   else if (!strcmp(NetworkType, "GSM") || !strcmp(NetworkType, "GPRS") ||
@@ -68,6 +71,7 @@ int Info::getNetworkType() {
 void Info::reset() {
   LastUpdate = 0;
   NetworkType[0] = '\0';
+  ProviderDesc[0] = '\0';
   LAC = 0;
   RSRP = RSCP = RSRQ = RSSI = 0;
   SINR = ECIO = 0.f;
@@ -84,10 +88,10 @@ Info::Info() { reset(); }
 
 namespace {
 
-std::string RouterIP;
-std::string RouterPW;
-int UpdateInterval;
-std::thread *UpdateThread;
+std::string routerIP;
+std::string routerPW;
+int updateInterval;
+std::thread *updateThreadHandle;
 std::atomic_bool deinitRequest;
 
 Info info;
@@ -99,7 +103,7 @@ int login() {
   std::string data;
 
   if (!httpRequest("/goform/goform_set_cmd_process", data,
-                   (std::string("isTest=false&goformId=LOGIN&password=") + RouterPW).c_str()))
+                   (std::string("isTest=false&goformId=LOGIN&password=") + routerPW).c_str()))
     return -1;
 
   if (data.empty() || data.length() >= 20 || data[0] != '{')
@@ -114,8 +118,8 @@ bool httpRequest(const char *request, std::string &buf, const char *POSTData) {
   if (!curl)
     abort();
 
-  std::string req = "http://" + RouterIP + request;
-  std::string ref = "http://" + RouterIP + "/index.html";
+  std::string req = "http://" + routerIP + request;
+  std::string ref = "http://" + routerIP + "/index.html";
 
   auto callback = [](void *data, size_t size, size_t nmemb, std::string &buf) {
     buf.append((const char *)data, size * nmemb);
@@ -175,6 +179,11 @@ size_t find(const char *s, const char *f) {
 void parseMessages(const std::string &messages, Info &info) {
   const char *m = messages.c_str();
   char line[4096];
+
+  int PrevNetworkType = -1;
+
+  if (info.GotNetworkType)
+    PrevNetworkType = info.getNetworkTypeAsInt();
 
   while (getLine(m, line)) {
     size_t pos;
@@ -281,6 +290,12 @@ void parseMessages(const std::string &messages, Info &info) {
     }
   }
 
+  if (PrevNetworkType != -1 && info.GotNetworkType &&
+      PrevNetworkType != info.getNetworkTypeAsInt()) {
+    info.reset(); // Force clean values after net switch
+    return;
+  }
+
   info.LastUpdate = time(nullptr);
   info.N++;
 }
@@ -303,30 +318,29 @@ void updateThread() {
       }
     }
 
-    Sleep(UpdateInterval);
+    Sleep(updateInterval);
   } while (!deinitRequest);
 }
 
 } // unnamed namespace
 
-InitCode init(const char *RouterIP, const char *RouterPW, int UpdateInterval) {
+InitCode init(const char *routerIP, const char *routerPW, int updateInterval) {
   if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
     abort();
 
-  char RouterPWBase64[1024];
+  char routerPWBase64[1024];
 
-  base64_encode(strlen(RouterPW), (const unsigned char*)RouterPW,
-                sizeof(RouterPWBase64), RouterPWBase64);
+  base64_encode(strlen(routerPW), (const unsigned char*)routerPW,
+                sizeof(routerPWBase64), routerPWBase64);
 
-  ::zte_mf283plus_watch::RouterIP = RouterIP;
-  ::zte_mf283plus_watch::RouterPW = RouterPWBase64;
-  ::zte_mf283plus_watch::UpdateInterval = UpdateInterval;
+  ::zte_mf283plus_watch::routerIP = routerIP;
+  ::zte_mf283plus_watch::routerPW = routerPWBase64;
+  ::zte_mf283plus_watch::updateInterval = updateInterval;
 
   int rc = login();
 
-  if (rc != 1) {
+  if (rc != 1)
     curl_global_cleanup();
-  }
 
   switch (rc) {
     case -1: return INIT_ERR_HTTP_REQUEST_FAILED;
@@ -336,19 +350,19 @@ InitCode init(const char *RouterIP, const char *RouterPW, int UpdateInterval) {
 
   info.reset();
 
-  UpdateThread = new std::thread(updateThread);
+  updateThreadHandle = new std::thread(updateThread);
   return INIT_OK;
 }
 
 void deinit() {
-  if (!UpdateThread)
+  if (!updateThreadHandle)
     return;
 
   deinitRequest = true;
 
-  UpdateThread->join();
-  delete UpdateThread;
-  UpdateThread = nullptr;
+  updateThreadHandle->join();
+  delete updateThreadHandle;
+  updateThreadHandle = nullptr;
   curl_global_cleanup();
 
   deinitRequest = false;
@@ -362,6 +376,44 @@ bool getInfo(Info &info) {
   }
   info = ::zte_mf283plus_watch::info;
   mutex.unlock();
+  return true;
+}
+
+bool fakeGetInfo(Info &info) {
+  time_t now = time(nullptr);
+  static time_t lastNetSwitch = 0;
+  srand(rand() + now);
+  info.CSQ = (rand() % 31) + .99f;
+  info.GotCSQ = true;
+  info.Channel = 1814;
+  info.GotChannel = true;
+  info.GlobalCellID = 0xFCFCFC;
+  info.GotCellID = true;
+  info.LAC = 0xFF;
+  info.GotLAC = true;
+  info.RSCP = -80 + (rand() % 20);
+  info.ECIO = -13 + (rand() % 10);
+  info.RSRP = -80 + (rand() % 20);
+  info.RSRQ = -14 + (rand() % 10);
+  info.SINR = 30.0f - (rand() % 20);
+  info.RSSI = -80 + (rand() % 20);
+  info.GotSignalStrength = true;
+  info.Frequency = 1800;
+  info.GotFreqency = true;
+  if (now - lastNetSwitch >= 10) {
+    switch (rand() % 3) {
+      case 0: strncpy(info.NetworkType, "LTE", sizeof(info.NetworkType)); break;
+      case 1: strncpy(info.NetworkType, "EDGE", sizeof(info.NetworkType)); break;
+      case 2: strncpy(info.NetworkType, "DC-HSPA+", sizeof(info.NetworkType)); break;
+    }
+    lastNetSwitch = now;
+  }
+  info.GotNetworkType = true;
+  strncpy(info.ProviderDesc, "3 AT", sizeof(info.ProviderDesc));
+  info.MCCMNC = 23205;
+  info.GotProviderInfo = true;
+  info.LastUpdate = now;
+  info.N++;
   return true;
 }
 
@@ -389,8 +441,11 @@ void zte_mf283plus_watch_free_info(zte_mf283plus_info *info) {
 int zte_mf283plus_watch_get_info(zte_mf283plus_info *info) {
   return zte_mf283plus_watch::getInfo(*(zte_mf283plus_watch::Info*)info);
 }
-int zte_mf283plus_watch_get_networktype(zte_mf283plus_info *info) {
-  return info->getNetworkType();
+int zte_mf283plus_watch_fake_get_info(zte_mf283plus_info *info) {
+  return zte_mf283plus_watch::fakeGetInfo(*(zte_mf283plus_watch::Info*)info);
+}
+int zte_mf283plus_watch_get_networktype_as_int(zte_mf283plus_info *info) {
+  return info->getNetworkTypeAsInt();
 }
 
 } // extern C

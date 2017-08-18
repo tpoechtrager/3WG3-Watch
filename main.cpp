@@ -24,7 +24,7 @@
 
   For more information, please refer to <http://unlicense.org/>
 
-  unknown @ LTEFORUM.AT - December, 2015
+  unknown @ LTEFORUM.AT - December, 2015 / January, 2016
 */
 
 #include <atomic>
@@ -62,10 +62,46 @@
 namespace {
 
 std::atomic_bool shouldExit;
-bool noCLS = getenv("NO_CLEAR_SCREEN");
+bool noClearScreen = getenv("NO_CLEAR_SCREEN");
+
+
+constexpr float minVal(float) { return -100000.f; }
+template<typename T> constexpr T minVal(T) { return std::numeric_limits<T>::min(); }
+template<typename T> constexpr T maxVal(T) { return std::numeric_limits<T>::max(); }
+
+template<typename T>
+struct MinMaxSum {
+  T min;
+  T max;
+  double sum;
+  size_t count;
+
+  float avg() const {
+    return count ? sum / count : T();
+  }
+
+  void update(const T val) {
+    if (val < min)
+      min = val;
+    if (val > max)
+      max = val;
+    sum += val;
+    count++;
+  }
+
+  void reset() {
+    min = maxVal(T());
+    max = minVal(T());
+    sum = 0.0;
+    count = 0;
+  }
+
+  MinMaxSum() { reset(); }
+};
+
 
 void clearScreen(bool force = false) {
-  if (!force && noCLS)
+  if (!force && noClearScreen)
     return;
 
 #ifdef _WIN32
@@ -92,31 +128,31 @@ void error(const char *msg) {
   exit(EXIT_FAILURE);
 }
 
-void getRouterIP(char *RouterIP, size_t size) {
+void getrouterIP(char *routerIP, size_t size) {
 #ifdef EXPERIMENTAL
   printf("Getting Router IP...\n");
   struct hostent *h = gethostbyname("ralink.ralinktech.com");
 
   if (h)
-    strncpy(RouterIP, inet_ntoa(*((struct in_addr *)h->h_addr)), size);
+    strncpy(routerIP, inet_ntoa(*((struct in_addr *)h->h_addr)), size);
 
   clearScreen(true);
 #else
   void *h = nullptr;
 #endif
 
-  if (!h || !strcmp(RouterIP, "127.0.0.1")) {
+  if (!h || !strcmp(routerIP, "127.0.0.1")) {
     printf("Router IP [192.168.0.1]: ");
 
-    if (fgets(RouterIP, size, stdin) && RouterIP[0] != '\n') {
-      RouterIP[strlen(RouterIP) - 1] = '\0';
+    if (fgets(routerIP, size, stdin) && routerIP[0] != '\n') {
+      routerIP[strlen(routerIP) - 1] = '\0';
     } else {
-      strncpy(RouterIP, "192.168.0.1", size);
+      strncpy(routerIP, "192.168.0.1", size);
     }
   }
 }
 
-void getRouterPassword(char *RouterPass, size_t size) {
+void getrouterPassword(char *routerPass, size_t size) {
   char tmp[16384];
 
   assert(size > 1);
@@ -130,8 +166,8 @@ void getRouterPassword(char *RouterPass, size_t size) {
         fprintf(stderr, "Password too long!\n");
         continue;
       }
-      memcpy(RouterPass, tmp, len);
-      RouterPass[std::min(len, size - 1)] = '\0';
+      memcpy(routerPass, tmp, len);
+      routerPass[std::min(len, size - 1)] = '\0';
       return;
     }
   }
@@ -143,7 +179,7 @@ void signalHandler(int) {
 
 } // unnamed namespace
 
-int main() {
+int main(int argc, char **argv) {
 #ifdef _WIN32
 #ifdef EXPERIMENTAL
   WSADATA wsaData;
@@ -156,42 +192,128 @@ int main() {
   signal(SIGINT, signalHandler);
   signal(SIGTERM, signalHandler);
 
-  char RouterIP[64];
-  char RouterPW[64];
+  char routerIP[64] = "";
+  char routerPW[33] = "";
+  int updateInterval = 1000;
+  bool pipe = false;
+  bool testMode = false;
+  bool showStats = false;
 
-  getRouterIP(RouterIP, sizeof(RouterIP));
+  for (int i = 1; i < argc; ++i) {
+    const char *parameter = argv[i];
+    const char *value;
+
+    if (!strcmp(parameter, "--pipe")) {
+      pipe = true;
+      noClearScreen = true;
+      continue;
+    } else if (!strcmp(parameter, "--test-mode")) {
+      testMode = true;
+      continue;
+    } else if (!strcmp(parameter, "--stats")) {
+      showStats = true;
+      continue;
+    }
+
+    value = argv[++i];
+
+    if (!value) {
+      fprintf(stderr, "Missing value for %s!\n", parameter);
+      return 2;
+    }
+
+    if (!strcmp(parameter, "--router-ip"))
+      strncpy(routerIP, value, sizeof(routerIP));
+    else if (!strncmp(parameter, "--router-p", __builtin_strlen("--router-p")))
+      strncpy(routerPW, value, sizeof(routerPW));
+    else if (!strcmp(parameter, "--update-interval"))
+      updateInterval = atoi(value);
+  }
+
+  if (updateInterval < 100) {
+    fprintf(stderr, "--update-interval must be >= 100!\n");
+    return 2;
+  }
+
+  if (!routerIP[0])
+    getrouterIP(routerIP, sizeof(routerIP));
+
   getpass:;
-  getRouterPassword(RouterPW, sizeof(RouterPW));
+
+  if (!routerPW[0])
+    getrouterPassword(routerPW, sizeof(routerPW));
 
   if (shouldExit)
     return 0;
 
-  switch (zte_mf283plus_watch::init(RouterIP, RouterPW)) {
-    case zte_mf283plus_watch::INIT_OK:
-      break;
-    case zte_mf283plus_watch::INIT_ERR_HTTP_REQUEST_FAILED:
-      error("HTTP Request failed");
-    case zte_mf283plus_watch::INIT_ERR_NOT_A_ZTE_MF283P:
-      error("Probably not a ZTE 283MF+ / 3Webgate 3");
-    case zte_mf283plus_watch::INIT_ERR_WRONG_PASSWORD:
-      fprintf(stderr, "Wrong Password!\n");
-      goto getpass;
+  if (!testMode) {
+    switch (zte_mf283plus_watch::init(routerIP, routerPW, updateInterval)) {
+      case zte_mf283plus_watch::INIT_OK:
+        break;
+      case zte_mf283plus_watch::INIT_ERR_HTTP_REQUEST_FAILED:
+        error("HTTP Request failed");
+      case zte_mf283plus_watch::INIT_ERR_NOT_A_ZTE_MF283P:
+        error("Probably not a ZTE 283MF+ / 3Webgate 3");
+      case zte_mf283plus_watch::INIT_ERR_WRONG_PASSWORD:
+        fprintf(stderr, "Wrong Password!\n");
+        routerPW[0] = '\0';
+        goto getpass;
+    }
   }
 
   clearScreen(true);
-  printf("Please be patient...");
+  if (!pipe)
+    printf("Please be patient...");
   fflush(stdout);
 
   zte_mf283plus_watch::Info info;
   size_t N = size_t(-1);
-  char str[120] = "";
-  bool forceCls = true;
+  const char *fmtStr = "%s%s [%ds]";
+  char str[1024] = "";
+  char statsStr[1024] = "";
+  bool forceClearScreen = true;
+
+  if (showStats)
+    fmtStr = pipe ? "%s%s [%ds] | %s" : (noClearScreen ? "%s%s [%ds]\n%s\n" : "%s%s [%ds]\n\n%s\n");
+
+  struct {
+    MinMaxSum<decltype(zte_mf283plus_watch::Info::RSRP)> RSRP;
+    MinMaxSum<decltype(zte_mf283plus_watch::Info::RSCP)> RSCP;
+    MinMaxSum<decltype(zte_mf283plus_watch::Info::RSRQ)> RSRQ;
+    MinMaxSum<decltype(zte_mf283plus_watch::Info::RSSI)> RSSI;
+    MinMaxSum<decltype(zte_mf283plus_watch::Info::SINR)> SINR;
+    MinMaxSum<decltype(zte_mf283plus_watch::Info::ECIO)> ECIO;
+    MinMaxSum<decltype(zte_mf283plus_watch::Info::CSQ)>  CSQ;
+
+    int NetworkType = -1;
+
+    void update(const zte_mf283plus_watch::Info &info, const int currentNetworkType) {
+      if (NetworkType != currentNetworkType) {
+        NetworkType = info.getNetworkTypeAsInt();
+        RSRP.reset(); RSCP.reset(); RSRQ.reset();
+        RSSI.reset(); SINR.reset(); ECIO.reset();
+        CSQ.reset();
+        NetworkType = currentNetworkType;
+      }
+
+      RSRP.update(info.RSRP); RSCP.update(info.RSCP); RSRQ.update(info.RSRQ);
+      RSSI.update(info.RSSI); SINR.update(info.SINR); ECIO.update(info.ECIO);
+      CSQ.update(info.CSQ);
+    }
+  } stats;
 
   do {
-    if (zte_mf283plus_watch::getInfo(info) && info.N != N &&
-        info.GotNetworkType && info.GotSignalStrength) {
+    if ((testMode ? zte_mf283plus_watch::fakeGetInfo(info) : zte_mf283plus_watch::getInfo(info)) &&
+        info.N != N && info.GotNetworkType && info.GotSignalStrength && info.GotCSQ) {
+          
+      int networkType = info.getNetworkTypeAsInt();
+      stats.update(info, networkType);
 
-      switch (info.getNetworkType()) {
+      auto calculateSignalStrength = [](const float CSQ) {
+        return (100.f / 31.99f) * CSQ;
+      };
+
+      switch (networkType) {
         case 4:
           snprintf(str, sizeof(str),
                    "[LTE | %s (%d) | %d MHz (%d)] [RSRP: %d, RSRQ: %d, RSSI: %d, SINR: %.1f (%.1f%%)] [CELL ID: %d]",
@@ -200,8 +322,18 @@ int main() {
                    info.GotFreqency ? info.Frequency : -1,
                    info.GotChannel ? info.Channel : -1,
                    info.RSRP, info.RSRQ, info.RSSI, info.SINR,
-                   info.GotCSQ ? (100.f / 31.99f) * info.CSQ : -1.f,
+                   calculateSignalStrength(info.CSQ),
                    info.GotCellID ? info.GlobalCellID : -1);
+
+          snprintf(statsStr, sizeof(statsStr),
+                   "[RSRP: %d/%d/%.1f,  RSRQ: %d/%d/%.1f,  RSSI: %d/%d/%.1f,  SINR: %.1f/%.1f/%.1f  (%.1f%%/%.1f%%/%.1f%%)]",
+                   stats.RSRP.max, stats.RSRP.min, stats.RSRP.avg(),
+                   stats.RSRQ.max, stats.RSRQ.min, stats.RSRQ.avg(),
+                   stats.RSSI.max, stats.RSSI.min, stats.RSSI.avg(),
+                   stats.SINR.max, stats.SINR.min, stats.SINR.avg(),
+                   calculateSignalStrength(stats.CSQ.max),
+                   calculateSignalStrength(stats.CSQ.min),
+                   calculateSignalStrength(stats.CSQ.avg()));
           break;
         case 3:
           snprintf(str, sizeof(str),
@@ -211,9 +343,17 @@ int main() {
                    info.GotProviderInfo ? info.MCCMNC : -1,
                    info.GotFreqency ? info.Frequency : -1,
                    info.RSCP, info.ECIO,
-                   info.GotCSQ ? (100.f / 31.99f) * info.CSQ : -1.f,
+                   calculateSignalStrength(info.CSQ),
                    info.GotCellID ? info.GlobalCellID : -1,
                    info.GotLAC ? info.LAC : -1);
+
+          snprintf(statsStr, sizeof(statsStr),
+                   "[RSCP: %d/%d/%.1f,  EC/IO: %.1f/%.1f/%.1f  (%.1f%%/%.1f%%/%.1f%%)]",
+                   stats.RSCP.max, stats.RSCP.min, stats.RSCP.avg(),
+                   stats.ECIO.max, stats.ECIO.min, stats.ECIO.avg(),
+                   calculateSignalStrength(stats.CSQ.max),
+                   calculateSignalStrength(stats.CSQ.min),
+                   calculateSignalStrength(stats.CSQ.avg()));
           break;
         case 2:
           snprintf(str, sizeof(str),
@@ -223,27 +363,40 @@ int main() {
                    info.GotProviderInfo ? info.MCCMNC : -1,
                    info.GotFreqency ? info.Frequency : -1,
                    info.RSSI,
-                   info.GotCSQ ? (100.f / 31.99f) * info.CSQ : -1.f,
+                   calculateSignalStrength(info.CSQ),
                    info.GotCellID ? info.GlobalCellID : -1,
                    info.GotLAC ? info.LAC : -1);
+
+          snprintf(statsStr, sizeof(statsStr),
+                   "[RSSI: %d/%d/%.1f  (%.1f%%/%.1f%%/%.1f%%)]",
+                   stats.RSSI.max, stats.RSSI.min, stats.RSSI.avg(),
+                   calculateSignalStrength(stats.CSQ.max),
+                   calculateSignalStrength(stats.CSQ.min),
+                   calculateSignalStrength(stats.CSQ.avg()));
           break;
         case 0:
           strcpy(str, "No Service!");
+          statsStr[0] = '\0';
       }
 
       N = info.N;
     }
 
     if (str[0]) {
-      clearScreen(forceCls);
-      forceCls = false;
-      printf("%s [%ds]", str, int(time(nullptr) - info.LastUpdate));
-      if (noCLS)
+      clearScreen(forceClearScreen);
+      forceClearScreen = false;
+      char timeStr[64] = "";
+      if (pipe) {
+        time_t t = time(nullptr);
+        strftime(timeStr, sizeof(timeStr), "[%Y-%m-%d - %H:%M:%S] | ", localtime(&t));
+      }
+      printf(fmtStr, timeStr, str, int(time(nullptr) - info.LastUpdate), statsStr);
+      if (noClearScreen)
         printf("\n");
       fflush(stdout);
     }
 
-    Sleep(1000);
+    Sleep(updateInterval);
   } while (!shouldExit);
 
   clearScreen();

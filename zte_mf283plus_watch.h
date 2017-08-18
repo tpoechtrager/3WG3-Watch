@@ -24,7 +24,7 @@
 
   For more information, please refer to <http://unlicense.org/>
 
-  unknown @ LTEFORUM.AT - December, 2015
+  unknown @ LTEFORUM.AT - December, 2015 / January, 2016
 */
 
 #include <time.h>
@@ -66,7 +66,7 @@ struct Info {
   size_t N;
 
 #ifdef __cplusplus
-  int getNetworkType();
+  int getNetworkTypeAsInt() const;
   void reset();
   Info();
 #endif
@@ -83,6 +83,7 @@ enum InitCode {
 InitCode init(const char *RouterIP, const char *RouterPW, int UpdateInterval = 1000);
 void deinit();
 bool getInfo(Info &info);
+bool fakeGetInfo(Info &info);
 } // namespace zte_mf283plus_watch
 #endif
 
@@ -104,7 +105,8 @@ zte_mf283plus_info *zte_mf283plus_watch_new_info();
 void zte_mf283plus_watch_free_info(zte_mf283plus_info *info);
 
 int zte_mf283plus_watch_get_info(zte_mf283plus_info *info);
-int zte_mf283plus_watch_get_networktype(zte_mf283plus_info *info);
+int zte_mf283plus_watch_fake_get_info(zte_mf283plus_info *info);
+int zte_mf283plus_watch_get_networktype_as_int(zte_mf283plus_info *info);
 
 #ifdef __cplusplus
 } // extern C
