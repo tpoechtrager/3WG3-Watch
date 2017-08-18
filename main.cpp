@@ -315,7 +315,7 @@ int main(int argc, char **argv) {
       switch (networkType) {
         case 4:
           snprintf(str, sizeof(str),
-                   "[LTE | %s (%d) | %d MHz (%d)] [RSRP: %d, RSRQ: %d, RSSI: %d, SINR: %.1f (%.1f%%)] [CELL ID: %d]",
+                   "[LTE | %s (%d) | %d MHz (%d)] [RSRP: %d, RSRQ: %d, RSSI: %d, SINR: %.1f (%.1f%%)] [CELL ID: %X]",
                    info.GotProviderInfo ? info.ProviderDesc : "??",
                    info.GotProviderInfo ? info.MCCMNC : -1,
                    info.GotFreqency ? info.Frequency : -1,
@@ -336,7 +336,7 @@ int main(int argc, char **argv) {
           break;
         case 3:
           snprintf(str, sizeof(str),
-                   "[%s | %s (%d) | %d MHz] [RSCP: %d, EC/IO: %.1f (%.1f%%)] [CELL ID: %d, LAC: %d]",
+                   "[%s | %s (%d) | %d MHz] [RSCP: %d, EC/IO: %.1f (%.1f%%)] [CELL ID: %X, LAC: %d]",
                    info.NetworkType,
                    info.GotProviderInfo ? info.ProviderDesc : "??",
                    info.GotProviderInfo ? info.MCCMNC : -1,
@@ -356,7 +356,7 @@ int main(int argc, char **argv) {
           break;
         case 2:
           snprintf(str, sizeof(str),
-                   "[%s | %s (%d) | %d MHz] [RSSI: %d (%.1f%%)] [CELL ID: %d, LAC: %d]",
+                   "[%s | %s (%d) | %d MHz] [RSSI: %d (%.1f%%)] [CELL ID: %X, LAC: %d]",
                    info.NetworkType,
                    info.GotProviderInfo ? info.ProviderDesc : "??",
                    info.GotProviderInfo ? info.MCCMNC : -1,
